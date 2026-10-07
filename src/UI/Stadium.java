@@ -5,15 +5,25 @@ import Logic.BattleListener;
 import Logic.Duel;
 import Model.Card;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Ventana principal. Muestra las cartas y el log de batalla.
+ * Implementa BattleListener para reaccionar a los eventos de Duel.
+ */
 public class Stadium extends JFrame implements BattleListener {
+    // Componentes enlazados con Stadium.form
     private JPanel panel1;
     private JTextArea textArea;
     private JButton botonInicio;
@@ -30,11 +40,16 @@ public class Stadium extends JFrame implements BattleListener {
     private JPanel panelTitulo;
     private JLabel labelTitulo;
 
-    private YgoApiClient apiClient = new YgoApiClient();
+    private JButton[] playerButtons;
+    private JButton[] aiButtons;
+
+    private final YgoApiClient apiClient = new YgoApiClient();
     private Duel duel;
     private List<Card> playerCards = new ArrayList<>();
     private List<Card> aiCards = new ArrayList<>();
     private List<Boolean> playerCardsUsed = new ArrayList<>();
+    // Imágenes ya descargadas y escaladas (se cargan fuera del hilo de la UI)
+    private Map<Card, ImageIcon> images = new HashMap<>();
 
     public Stadium() {
         setContentPane(panel1);
@@ -60,41 +75,39 @@ public class Stadium extends JFrame implements BattleListener {
         initializeUI();
     }
 
+    /** Configura componentes y listeners. */
     private void initializeUI() {
-        // Configurar textArea
+        // Los arrays se crean aquí porque los botones del .form ya existen en este punto
+        playerButtons = new JButton[]{carta1, carta2, carta3};
+        aiButtons = new JButton[]{cartaRival1, cartaRival2, cartaRival3};
+
         textArea.setEditable(false);
         textArea.setFont(new Font("Consolas", Font.PLAIN, 16));
         textArea.setBackground(new Color(20, 20, 20));
         textArea.setForeground(new Color(0, 220, 0));
-        textArea.setText("Bienvenido a Yu-Gi-Oh!. Presiona 'Elegir Cartas' para comenzar.\n");
+        textArea.setText("Bienvenido a Yu-Gi-Oh!. Presiona 'Iniciar duelo' para comenzar.\n");
 
-        // Botón de inicio con estilo
+        botonInicio.setText("Iniciar duelo");
         botonInicio.setBackground(new Color(220, 20, 60));
         botonInicio.setForeground(Color.WHITE);
         botonInicio.setFont(new Font("Segoe UI", Font.BOLD, 20));
         botonInicio.setFocusPainted(false);
         botonInicio.setBorder(new LineBorder(Color.BLACK, 2, true));
-
         botonInicio.addActionListener(e -> startDuel());
 
-        // Deshabilitar botones de cartas
-        carta1.setEnabled(false);
-        carta2.setEnabled(false);
-        carta3.setEnabled(false);
-        carta1.addActionListener(e -> selectPlayerCard(0));
-        carta2.addActionListener(e -> selectPlayerCard(1));
-        carta3.addActionListener(e -> selectPlayerCard(2));
-
-        cartaRival1.setEnabled(false);
-        cartaRival2.setEnabled(false);
-        cartaRival3.setEnabled(false);
+        for (int i = 0; i < 3; i++) {
+            final int index = i;
+            playerButtons[i].setEnabled(false);
+            playerButtons[i].addActionListener(e -> selectPlayerCard(index));
+            aiButtons[i].setEnabled(false);
+        }
         panelRival.setVisible(false);
     }
 
+    /** Descarga las 6 cartas y sus imágenes en un hilo aparte para no bloquear la UI. */
     private void startDuel() {
         botonInicio.setEnabled(false);
-        textArea.append("Cargando cartas...\n");
-        textArea.setCaretPosition(textArea.getDocument().getLength());
+        log("Cargando cartas...");
 
         clearPlayerCards();
         clearAiCards();
@@ -105,39 +118,64 @@ public class Stadium extends JFrame implements BattleListener {
                 List<Card> newPlayerCards = new ArrayList<>();
                 List<Card> newAiCards = new ArrayList<>();
                 List<Boolean> newUsed = new ArrayList<>();
+                Map<Card, ImageIcon> newImages = new HashMap<>();
 
                 for (int i = 0; i < 3; i++) {
-                    newPlayerCards.add(apiClient.getRandomMonsterCard());
-                    newAiCards.add(apiClient.getRandomMonsterCard());
+                    Card p = apiClient.getRandomMonsterCard();
+                    Card a = apiClient.getRandomMonsterCard();
+                    newPlayerCards.add(p);
+                    newAiCards.add(a);
                     newUsed.add(false);
+                    newImages.put(p, loadImage(p));
+                    newImages.put(a, loadImage(a));
                 }
 
+                // Solo cuando están las 6 cartas se actualiza la UI y se inicia el duelo
                 SwingUtilities.invokeLater(() -> {
                     playerCards = newPlayerCards;
                     aiCards = newAiCards;
                     playerCardsUsed = newUsed;
+                    images = newImages;
                     duel = new Duel(playerCards, aiCards, this);
 
-                    textArea.append("Cartas cargadas. Selecciona una carta para jugar.\n");
-                    textArea.setCaretPosition(textArea.getDocument().getLength());
+                    log("Cartas cargadas.");
                     showPlayerCards();
                     showAiCards();
+                    duel.start();
                 });
+            } catch (IOException ex) {
+                showLoadError("Error de red: " + ex.getMessage());
             } catch (Exception ex) {
-                SwingUtilities.invokeLater(() -> {
-                    textArea.append("Error cargando cartas: " + ex.getMessage() + "\n");
-                    textArea.setCaretPosition(textArea.getDocument().getLength());
-                    botonInicio.setEnabled(true);
-                });
+                showLoadError("No se pudo cargar la carta: " + ex.getMessage());
             }
         }).start();
     }
 
+    private void showLoadError(String message) {
+        SwingUtilities.invokeLater(() -> {
+            log(message);
+            botonInicio.setEnabled(true);
+        });
+    }
+
+    /** Descarga y escala la imagen de una carta (se llama fuera del hilo de la UI). */
+    private ImageIcon loadImage(Card card) {
+        try {
+            BufferedImage img = ImageIO.read(URI.create(card.getImageUrl()).toURL());
+            if (img == null) return null;
+            return new ImageIcon(img.getScaledInstance(100, 145, Image.SCALE_SMOOTH));
+        } catch (Exception e) {
+            System.err.println("No se pudo cargar la imagen de: " + card.getName());
+            return null;
+        }
+    }
+
     private void showPlayerCards() {
         if (playerCards.size() >= 3 && playerCardsUsed.size() >= 3) {
-            setupCardButton(carta1, playerCards.get(0), 0);
-            setupCardButton(carta2, playerCards.get(1), 1);
-            setupCardButton(carta3, playerCards.get(2), 2);
+            for (int i = 0; i < 3; i++) {
+                boolean used = playerCardsUsed.get(i);
+                setupCardButton(playerButtons[i], playerCards.get(i), !used, used, new Color(0, 255, 0));
+            }
         }
         panelCartas.revalidate();
         panelCartas.repaint();
@@ -145,126 +183,119 @@ public class Stadium extends JFrame implements BattleListener {
 
     private void showAiCards() {
         if (aiCards.size() >= 3) {
-            setupAiCardButton(cartaRival1, aiCards.get(0));
-            setupAiCardButton(cartaRival2, aiCards.get(1));
-            setupAiCardButton(cartaRival3, aiCards.get(2));
+            for (int i = 0; i < 3; i++) {
+                setupCardButton(aiButtons[i], aiCards.get(i), false, false, Color.RED);
+            }
         }
         panelRival.setVisible(true);
         panelRival.revalidate();
         panelRival.repaint();
     }
 
-    private void setupCardButton(JButton button, Card card, int index) {
-        boolean isUsed = playerCardsUsed.get(index);
-        button.setEnabled(!isUsed);
-        button.setText("<html>" + card.getName() + "<br>ATK: " + card.getAtk() + " DEF: " + card.getDef() + (isUsed ? " (Usada)" : "") + "</html>");
-        try {
-            ImageIcon icon = new ImageIcon(URI.create(card.getImageUrl()).toURL());
-            Image img = icon.getImage().getScaledInstance(100, 145, Image.SCALE_SMOOTH);
-            button.setIcon(new ImageIcon(img));
-            button.setHorizontalTextPosition(SwingConstants.CENTER);
-            button.setVerticalTextPosition(SwingConstants.BOTTOM);
-            button.setPreferredSize(new Dimension(120, 180));
-            button.setBorder(new LineBorder(new Color(0, 255, 0), 3, true));
-        } catch (Exception e) {
-            System.err.println("Error cargando imagen para carta: " + card.getName());
+    /** Pinta una carta en un botón usando la imagen ya cargada (sin descargar nada). */
+    private void setupCardButton(JButton button, Card card, boolean enabled, boolean used, Color border) {
+        button.setEnabled(enabled);
+        button.setText("<html>" + card.getName() + "<br>ATK: " + card.getAtk()
+                + " DEF: " + card.getDef() + (used ? " (Usada)" : "") + "</html>");
+        ImageIcon icon = images.get(card);
+        if (icon != null) {
+            button.setIcon(icon);
+            button.setDisabledIcon(icon); // conserva el color aunque esté deshabilitado
         }
+        button.setHorizontalTextPosition(SwingConstants.CENTER);
+        button.setVerticalTextPosition(SwingConstants.BOTTOM);
+        button.setPreferredSize(new Dimension(120, 180));
+        button.setBorder(new LineBorder(border, 3, true));
     }
 
-    private void setupAiCardButton(JButton button, Card card) {
-        button.setEnabled(false);
-        button.setText("<html>" + card.getName() + "<br>ATK: " + card.getAtk() + " DEF: " + card.getDef() + "</html>");
-        try {
-            ImageIcon icon = new ImageIcon(URI.create(card.getImageUrl()).toURL());
-            Image img = icon.getImage().getScaledInstance(100, 145, Image.SCALE_SMOOTH);
-            button.setIcon(new ImageIcon(img));
-            button.setHorizontalTextPosition(SwingConstants.CENTER);
-            button.setVerticalTextPosition(SwingConstants.BOTTOM);
-            button.setPreferredSize(new Dimension(120, 180));
-            button.setBorder(new LineBorder(Color.RED, 3, true));
-        } catch (Exception e) {
-            System.err.println("Error cargando imagen para carta AI: " + card.getName());
-        }
-    }
-
+    /** El jugador elige carta y posición; luego se juega la ronda. */
     private void selectPlayerCard(int index) {
         if (duel == null || index < 0 || index >= playerCards.size() || playerCardsUsed.get(index)) {
-            textArea.append("Esta carta ya fue usada o no está disponible.\n");
-            textArea.setCaretPosition(textArea.getDocument().getLength());
+            log("Esta carta ya fue usada o no está disponible.");
             return;
         }
 
-        Card selectedCard = playerCards.get(index);
+        Card selected = playerCards.get(index);
+
+        Object[] options = {"Ataque", "Defensa"};
+        int choice = JOptionPane.showOptionDialog(this,
+                "¿En qué posición juegas a " + selected.getName() + "?",
+                "Elegir posición", JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+        if (choice == JOptionPane.CLOSED_OPTION) return; // canceló: no se gasta la carta
+        selected.setPosition(choice == 0 ? "attack" : "defense");
+
         playerCardsUsed.set(index, true);
-
-        switch (index) {
-            case 0 -> carta1.setEnabled(false);
-            case 1 -> carta2.setEnabled(false);
-            case 2 -> carta3.setEnabled(false);
-        }
-
         showPlayerCards();
-        textArea.append("Carta seleccionada: " + selectedCard.getName() + ".\n");
-        textArea.setCaretPosition(textArea.getDocument().getLength());
+        log("Carta seleccionada: " + selected.getName() + ".");
 
         // Se juega al final: si el duelo termina, onDuelEnded limpia todo
-        duel.playTurn(selectedCard);
+        duel.playTurn(selected);
     }
 
     private void clearPlayerCards() {
-        carta1.setText("");
-        carta1.setIcon(null);
-        carta1.setEnabled(false);
-        carta2.setText("");
-        carta2.setIcon(null);
-        carta2.setEnabled(false);
-        carta3.setText("");
-        carta3.setIcon(null);
-        carta3.setEnabled(false);
+        for (JButton b : playerButtons) {
+            b.setText("");
+            b.setIcon(null);
+            b.setDisabledIcon(null);
+            b.setEnabled(false);
+        }
         panelCartas.revalidate();
         panelCartas.repaint();
     }
 
     private void clearAiCards() {
-        cartaRival1.setText("");
-        cartaRival1.setIcon(null);
-        cartaRival2.setText("");
-        cartaRival2.setIcon(null);
-        cartaRival3.setText("");
-        cartaRival3.setIcon(null);
+        for (JButton b : aiButtons) {
+            b.setText("");
+            b.setIcon(null);
+            b.setDisabledIcon(null);
+        }
         panelRival.setVisible(false);
         panelRival.revalidate();
         panelRival.repaint();
     }
 
+    private void log(String message) {
+        textArea.append(message + "\n");
+        textArea.setCaretPosition(textArea.getDocument().getLength());
+    }
+
+    // ---------- Eventos de BattleListener ----------
+
+    @Override
+    public void onDuelStarted(boolean aiStarts) {
+        log("Turno inicial (sorteo): " + (aiStarts ? "la Máquina" : "el Jugador") + ".");
+    }
+
+    @Override
+    public void onAiPlayed(String aiCard) {
+        log("La máquina juega primero: " + aiCard + ". Elige tu carta.");
+    }
+
     @Override
     public void onTurn(String playerCard, String aiCard, String winner) {
         String resultado;
-        if ("player".equals(winner)) {
-            resultado = " ¡Ganaste el turno!";
-        } else if ("ai".equals(winner)) {
-            resultado = " La máquina ganó el turno.";
-        } else {
-            resultado = " Empate en el turno.";
-        }
+        if ("player".equals(winner)) resultado = "¡Ganaste el turno!";
+        else if ("ai".equals(winner)) resultado = "La máquina ganó el turno.";
+        else resultado = "Empate en el turno.";
 
-        textArea.append(String.format("Jugador: %s | Máquina: %s -> %s%n", playerCard, aiCard, resultado));
+        log(String.format("Jugador: %s | Máquina: %s -> %s", playerCard, aiCard, resultado));
     }
 
     @Override
     public void onScoreChanged(int playerScore, int aiScore) {
-        textArea.append(String.format("Marcador - Jugador: %d, Máquina: %d\n", playerScore, aiScore));
-        textArea.setCaretPosition(textArea.getDocument().getLength());
+        log(String.format("Marcador - Jugador: %d, Máquina: %d", playerScore, aiScore));
     }
 
     @Override
     public void onDuelEnded(String winner) {
-        textArea.append("El duelo terminó. Ganador: " + winner + "\n");
-        textArea.setCaretPosition(textArea.getDocument().getLength());
-        JOptionPane.showMessageDialog(this, "El duelo terminó. Ganador: " + winner, "Duelo Finalizado", JOptionPane.INFORMATION_MESSAGE);
+        log("El duelo terminó. Ganador: " + winner);
+        JOptionPane.showMessageDialog(this, "El duelo terminó. Ganador: " + winner,
+                "Duelo Finalizado", JOptionPane.INFORMATION_MESSAGE);
         botonInicio.setEnabled(true);
         clearPlayerCards();
         clearAiCards();
         playerCardsUsed.clear();
+        duel = null;
     }
 }
