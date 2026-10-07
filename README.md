@@ -78,16 +78,16 @@ Para no bloquear el hilo de la UI, las 6 cartas y sus imágenes se descargan en 
 ![Pantalla inicial](docs/Pantalla_Principal.jpeg)
 
 ### Cartas cargadas
-![Cartas cargadas](docs/Cartas_cargadas.jpeg) 
+![Cartas cargadas](docs/cartas_cargadas.png) 
 
 ### Selección de posición (Ataque / Defensa)
-![Elegir posición](docs/Seleccion_Posicion(Ataque,Defensa).jpeg)
+![Elegir posición](docs/seleccion_posicion(ataque,defensa).png)
 
 ### Log de batalla durante el duelo
-![Log de batalla](docs/Log_Batalla-Durante_Duelo.jpeg) 
+![Log de batalla](docs/log_batalla.png) 
 
 ### Anuncio del ganador
-![Ganador](docs/Anuncio_Ganador.jpeg) 
+![Ganador](docs/anuncio_ganador.png) 
 
 ### Manejo de errores (sin internet)
 ![Error de red](docs/Manejo_Errores.jpeg)

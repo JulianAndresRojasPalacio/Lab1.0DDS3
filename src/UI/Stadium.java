@@ -10,6 +10,8 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.net.URI;
@@ -51,6 +53,10 @@ public class Stadium extends JFrame implements BattleListener {
     // Imágenes ya descargadas y escaladas (se cargan fuera del hilo de la UI)
     private Map<Card, ImageIcon> images = new HashMap<>();
 
+    // Colores del tema
+    private static final Color GREEN = new Color(0, 255, 0);
+    private static final Color GOLD = new Color(255, 215, 0);
+
     public Stadium() {
         setContentPane(panel1);
         setTitle("Yu-Gi-Oh! A Pelear Durísimo");
@@ -62,7 +68,7 @@ public class Stadium extends JFrame implements BattleListener {
         panel1.setBorder(new EmptyBorder(15, 15, 15, 15));
         panel1.setBackground(new Color(30, 30, 30));
 
-        panelCartas.setBorder(new LineBorder(new Color(0, 255, 0), 2, true));
+        panelCartas.setBorder(new LineBorder(GREEN, 2, true));
         panelCartas.setBackground(new Color(40, 40, 70));
 
         panelRival.setBorder(new LineBorder(Color.RED, 2, true));
@@ -70,7 +76,7 @@ public class Stadium extends JFrame implements BattleListener {
 
         panelTitulo.setBackground(new Color(25, 25, 25));
         labelTitulo.setFont(new Font("Segoe UI", Font.BOLD, 28));
-        labelTitulo.setForeground(new Color(255, 215, 0));
+        labelTitulo.setForeground(GOLD);
 
         initializeUI();
     }
@@ -97,8 +103,23 @@ public class Stadium extends JFrame implements BattleListener {
 
         for (int i = 0; i < 3; i++) {
             final int index = i;
-            playerButtons[i].setEnabled(false);
-            playerButtons[i].addActionListener(e -> selectPlayerCard(index));
+            final JButton b = playerButtons[i];
+            b.setEnabled(false);
+            b.addActionListener(e -> selectPlayerCard(index));
+
+            // Borde dorado al pasar el mouse sobre una carta disponible
+            b.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    if (b.isEnabled()) b.setBorder(new LineBorder(GOLD, 3, true));
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    b.setBorder(new LineBorder(GREEN, 3, true));
+                }
+            });
+
             aiButtons[i].setEnabled(false);
         }
         panelRival.setVisible(false);
@@ -174,7 +195,7 @@ public class Stadium extends JFrame implements BattleListener {
         if (playerCards.size() >= 3 && playerCardsUsed.size() >= 3) {
             for (int i = 0; i < 3; i++) {
                 boolean used = playerCardsUsed.get(i);
-                setupCardButton(playerButtons[i], playerCards.get(i), !used, used, new Color(0, 255, 0));
+                setupCardButton(playerButtons[i], playerCards.get(i), !used, used, GREEN);
             }
         }
         panelCartas.revalidate();
@@ -192,16 +213,29 @@ public class Stadium extends JFrame implements BattleListener {
         panelRival.repaint();
     }
 
-    /** Pinta una carta en un botón usando la imagen ya cargada (sin descargar nada). */
+    /** Pinta una carta en un botón con estilo oscuro, usando la imagen ya cargada. */
     private void setupCardButton(JButton button, Card card, boolean enabled, boolean used, Color border) {
         button.setEnabled(enabled);
-        button.setText("<html>" + card.getName() + "<br>ATK: " + card.getAtk()
-                + " DEF: " + card.getDef() + (used ? " (Usada)" : "") + "</html>");
+        button.setText("<html><div style='text-align:center; color:white'><b>" + card.getName()
+                + "</b><br>ATK: " + card.getAtk() + " | DEF: " + card.getDef()
+                + (used ? "<br><i>(Usada)</i>" : "") + "</div></html>");
+
         ImageIcon icon = images.get(card);
         if (icon != null) {
             button.setIcon(icon);
-            button.setDisabledIcon(icon); // conserva el color aunque esté deshabilitado
+            // Usada: en gris. Rival o disponible: conserva el color
+            button.setDisabledIcon(used
+                    ? new ImageIcon(GrayFilter.createDisabledImage(icon.getImage()))
+                    : icon);
         }
+
+        // Fondo sólido oscuro en lugar del degradado por defecto
+        boolean isAi = border.equals(Color.RED);
+        button.setOpaque(true);
+        button.setContentAreaFilled(false);
+        button.setBackground(isAi ? new Color(60, 25, 25) : new Color(25, 35, 70));
+        button.setFocusPainted(false);
+
         button.setHorizontalTextPosition(SwingConstants.CENTER);
         button.setVerticalTextPosition(SwingConstants.BOTTOM);
         button.setPreferredSize(new Dimension(120, 180));
